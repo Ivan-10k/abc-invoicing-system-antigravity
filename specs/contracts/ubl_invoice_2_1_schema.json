@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InvoiceLineItemDTO",
+  "type": "object",
+  "properties": {
+    "line_number": {
+      "type": "integer",
+      "description": "Número secuencial de la línea (XPath: cac:InvoiceLine/cbc:ID)"
+    },
+    "product_sku": {
+      "type": "string",
+      "description": "Código interno del producto SKU (XPath: cac:InvoiceLine/cac:Item/cac:SellersItemIdentification/cbc:ID)"
+    },
+    "description": {
+      "type": "string",
+      "description": "Descripción detallada del ítem (XPath: cac:InvoiceLine/cac:Item/cbc:Description)"
+    },
+    "unit_code": {
+      "type": "string",
+      "description": "Unidad de medida según Catálogo 03 SUNAT, ej. NIU, KGM (XPath: cac:InvoiceLine/cbc:InvoicedQuantity/@unitCode)"
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Cantidad facturada (XPath: cac:InvoiceLine/cbc:InvoicedQuantity)"
+    },
+    "unit_value": {
+      "type": "number",
+      "description": "Valor unitario sin impuestos (XPath: cac:InvoiceLine/cac:Price/cbc:PriceAmount)"
+    },
+    "catalog_07_igv_type": {
+      "type": "string",
+      "description": "Código del Catálogo 07 de SUNAT, ej. '10' (Gravado), '20' (Exonerado), '30' (Inafecto)"
+    },
+    "igv_rate": {
+      "type": "number",
+      "description": "Tasa del IGV, ej. 0.18"
+    },
+    "igv_amount": {
+      "type": "number",
+      "description": "Monto total del IGV de la línea (XPath: cac:InvoiceLine/cac:TaxTotal/cac:TaxAmount)"
+    },
+    "isc_rate": {
+      "type": "number",
+      "description": "Tasa del ISC si aplica"
+    },
+    "isc_amount": {
+      "type": "number",
+      "description": "Monto total del ISC"
+    },
+    "icbper_quantity": {
+      "type": "number",
+      "description": "Cantidad de bolsas plásticas si aplica"
+    },
+    "icbper_unit_tax": {
+      "type": "number",
+      "description": "Impuesto unitario por bolsa plástica"
+    },
+    "icbper_amount": {
+      "type": "number",
+      "description": "Monto total del ICBPER"
+    },
+    "line_extension_amount": {
+      "type": "number",
+      "description": "Valor de venta de la línea (Cantidad * Valor unitario)"
+    },
+    "line_total_with_taxes": {
+      "type": "number",
+      "description": "Precio de venta total de la línea con impuestos incluidos"
+    }
+  },
+  "required": [
+    "line_number",
+    "product_sku",
+    "description",
+    "unit_code",
+    "quantity",
+    "unit_value",
+    "catalog_07_igv_type",
+    "igv_amount",
+    "line_extension_amount",
+    "line_total_with_taxes"
+  ]
+}

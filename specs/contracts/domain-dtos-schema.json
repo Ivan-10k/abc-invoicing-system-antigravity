@@ -1,0 +1,331 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://abc-software-corp.pe/schemas/domain-dtos-schema.json",
+  "title": "ABC Software Corp - SUNAT UBL 2.1 & Legacy Kardex Domain DTOs Contract",
+  "description": "Contratos formales JSON Schema (Draft-07) para migración de almacén legacy (RS 234-2006) y facturación electrónica OASIS UBL 2.1 (RS 097-2012 / Catálogos 01, 02, 03, 05, 07, 08).",
+  "definitions": {
+    "RucType": {
+      "type": "string",
+      "pattern": "^(10|15|17|20)[0-9]{9}$",
+      "description": "RUC peruano de 11 dígitos validado con algoritmo Módulo 11."
+    },
+    "Catalog01DocumentType": {
+      "type": "string",
+      "enum": ["01", "03", "07", "08"],
+      "description": "Catálogo 01 SUNAT: 01=Factura, 03=Boleta de Venta, 07=Nota de Crédito, 08=Nota de Débito."
+    },
+    "Catalog02CurrencyCode": {
+      "type": "string",
+      "enum": ["PEN", "USD", "EUR"],
+      "description": "Catálogo 02 SUNAT (ISO 4217): Moneda del comprobante electrónico."
+    },
+    "Catalog08DebitNoteTypeCode": {
+      "type": "string",
+      "enum": ["01", "02", "03", "10", "11"],
+      "description": "Catálogo 08 SUNAT: Códigos de Tipo de Nota de Débito (01=Intereses por mora, 02=Aumento en el valor, 03=Penalidades/otros conceptos, 10=Ajustes de exportación, 11=Ajustes afectos al IVAP)."
+    },
+    "InvoiceLineDTO": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "InvoiceLineItemDTO",
+      "type": "object",
+      "properties": {
+        "line_number": {
+          "type": "integer",
+          "description": "Número secuencial de la línea (XPath: cac:InvoiceLine/cbc:ID)"
+        },
+        "product_sku": {
+          "type": "string",
+          "description": "Código interno del producto SKU (XPath: cac:InvoiceLine/cac:Item/cac:SellersItemIdentification/cbc:ID)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Descripción detallada del ítem (XPath: cac:InvoiceLine/cac:Item/cbc:Description)"
+        },
+        "unit_code": {
+          "type": "string",
+          "description": "Unidad de medida según Catálogo 03 SUNAT, ej. NIU, KGM (XPath: cac:InvoiceLine/cbc:InvoicedQuantity/@unitCode)"
+        },
+        "quantity": {
+          "type": "number",
+          "description": "Cantidad facturada (XPath: cac:InvoiceLine/cbc:InvoicedQuantity)"
+        },
+        "unit_value": {
+          "type": "number",
+          "description": "Valor unitario sin impuestos (XPath: cac:InvoiceLine/cac:Price/cbc:PriceAmount)"
+        },
+        "catalog_07_igv_type": {
+          "type": "string",
+          "description": "Código del Catálogo 07 de SUNAT, ej. '10' (Gravado), '20' (Exonerado), '30' (Inafecto)"
+        },
+        "igv_rate": {
+          "type": "number",
+          "description": "Tasa del IGV, ej. 0.18"
+        },
+        "igv_amount": {
+          "type": "number",
+          "description": "Monto total del IGV de la línea (XPath: cac:InvoiceLine/cac:TaxTotal/cac:TaxAmount)"
+        },
+        "isc_rate": {
+          "type": "number",
+          "description": "Tasa del ISC si aplica"
+        },
+        "isc_amount": {
+          "type": "number",
+          "description": "Monto total del ISC"
+        },
+        "icbper_quantity": {
+          "type": "number",
+          "description": "Cantidad de bolsas plásticas si aplica"
+        },
+        "icbper_unit_tax": {
+          "type": "number",
+          "description": "Impuesto unitario por bolsa plástica"
+        },
+        "icbper_amount": {
+          "type": "number",
+          "description": "Monto total del ICBPER"
+        },
+        "line_extension_amount": {
+          "type": "number",
+          "description": "Valor de venta de la línea (Cantidad * Valor unitario)"
+        },
+        "line_total_with_taxes": {
+          "type": "number",
+          "description": "Precio de venta total de la línea con impuestos incluidos"
+        }
+      },
+      "required": [
+        "line_number",
+        "product_sku",
+        "description",
+        "unit_code",
+        "quantity",
+        "unit_value",
+        "catalog_07_igv_type",
+        "igv_amount",
+        "line_extension_amount",
+        "line_total_with_taxes"
+      ],
+      "additionalProperties": false
+    },
+    "LegacyInventoryRecordDTO": {
+      "type": "object",
+      "title": "LegacyInventoryRecordDTO",
+      "description": "Representa una ficha informal del sistema de almacén legacy y sus metadatos de trazabilidad hacia el Kardex RS 234-2006 y comprobantes UBL 2.1.",
+      "required": ["fecha", "ingreso", "salida", "producto", "nro_documento"],
+      "properties": {
+        "legacy_record_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Identificador único asignado durante el proceso de ingesta."
+        },
+        "fecha": {
+          "type": "string",
+          "format": "date",
+          "description": "Fecha registrada en la ficha informal de almacén (YYYY-MM-DD)."
+        },
+        "ingreso": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cantidad ingresada al almacén (0 si es movimiento de salida)."
+        },
+        "salida": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cantidad retirada del almacén (0 si es movimiento de ingreso)."
+        },
+        "producto": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 250,
+          "description": "Descripción o nombre del producto en el sistema legacy."
+        },
+        "nro_documento": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 50,
+          "description": "Número de documento original de la ficha legacy (ej. 'F001-000890', 'BV 002-145', 'GUIA-991')."
+        },
+        "migrated_invoice_id": {
+          "type": ["string", "null"],
+          "description": "Vínculo de trazabilidad inmutable hacia el ID del comprobante electrónico UBL 2.1 generado o asociado."
+        },
+        "normalized_series": {
+          "type": ["string", "null"],
+          "pattern": "^[F|B|E][A-Z0-9]{3}$",
+          "description": "Serie normalizada bajo estándar SUNAT extraída de nro_documento."
+        },
+        "normalized_correlative": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Correlativo entero normalizado extraído de nro_documento."
+        },
+        "sunat_table12_operation_type": {
+          "type": "string",
+          "enum": ["01", "02", "05", "16", "99"],
+          "default": "01",
+          "description": "Tabla 12 SUNAT (RS 234-2006): 01=Venta, 02=Compra, 05=Devolución Recibida, 16=Saldo Inicial, 99=Otros."
+        },
+        "audit_sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Hash SHA-256 de los 5 campos originales para garantizar no-repudio en auditoría SUNAT."
+        }
+      },
+      "additionalProperties": false
+    },
+    "InvoiceRequestDTO": {
+      "type": "object",
+      "title": "InvoiceRequestDTO",
+      "description": "Contrato de entrada para emisión de Factura (01), Boleta (03), Nota de Crédito (07) o Nota de Débito (08) bajo UBL 2.1.",
+      "required": [
+        "ubl_version",
+        "customization_id",
+        "operation_type_catalog_51",
+        "document_type_catalog_01",
+        "series",
+        "correlative",
+        "issue_date",
+        "currency_code_catalog_02",
+        "issuer_ruc",
+        "issuer_legal_name",
+        "customer_doc_type_catalog_06",
+        "customer_doc_number",
+        "customer_legal_name",
+        "lines",
+        "total_gravadas",
+        "total_exoneradas",
+        "total_inafectas",
+        "total_igv",
+        "total_isc",
+        "total_icbper",
+        "payable_amount"
+      ],
+      "properties": {
+        "ubl_version": {
+          "type": "string",
+          "const": "2.1"
+        },
+        "customization_id": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "operation_type_catalog_51": {
+          "type": "string",
+          "default": "0101",
+          "description": "Catálogo 51 SUNAT: Tipo de operación (0101=Venta Interna)."
+        },
+        "document_type_catalog_01": {
+          "$ref": "#/definitions/Catalog01DocumentType"
+        },
+        "series": {
+          "type": "string",
+          "pattern": "^[F|B][A-Z0-9]{3}$",
+          "description": "Serie alfanumérica de 4 caracteres (ej. F001, B001, FD01, FC01)."
+        },
+        "correlative": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99999999
+        },
+        "issue_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "issue_time": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$"
+        },
+        "currency_code_catalog_02": {
+          "$ref": "#/definitions/Catalog02CurrencyCode"
+        },
+        "issuer_ruc": {
+          "$ref": "#/definitions/RucType"
+        },
+        "issuer_legal_name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 150
+        },
+        "issuer_ubigeo": {
+          "type": "string",
+          "pattern": "^[0-9]{6}$",
+          "default": "150101"
+        },
+        "customer_doc_type_catalog_06": {
+          "type": "string",
+          "enum": ["1", "6", "4", "7", "0"],
+          "description": "Catálogo 06 SUNAT: 6=RUC, 1=DNI, 4=Carnet Extranjería, 7=Pasaporte, 0=Sin RUC."
+        },
+        "customer_doc_number": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 15
+        },
+        "customer_legal_name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 150
+        },
+        "catalog_08_debit_note_type": {
+          "oneOf": [
+            { "$ref": "#/definitions/Catalog08DebitNoteTypeCode" },
+            { "type": "null" }
+          ],
+          "description": "Obligatorio cuando document_type_catalog_01 == '08' (Nota de Débito)."
+        },
+        "referenced_document_series_number": {
+          "type": ["string", "null"],
+          "pattern": "^[F|B][A-Z0-9]{3}-[0-9]{1,8}$",
+          "description": "Serie-Correlativo del comprobante modificado por una Nota de Crédito/Débito."
+        },
+        "discrepancy_reason": {
+          "type": ["string", "null"],
+          "maxLength": 250,
+          "description": "Sustento o descripción del motivo de la Nota de Débito/Crédito."
+        },
+        "source_legacy_record_id": {
+          "type": ["string", "null"],
+          "description": "ID de ficha de almacén legacy si este comprobante proviene de una migración."
+        },
+        "lines": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/InvoiceLineDTO"
+          }
+        },
+        "total_gravadas": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total_exoneradas": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total_inafectas": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total_igv": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total_isc": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total_icbper": {
+          "type": "number",
+          "minimum": 0
+        },
+        "payable_amount": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Importe total a pagar (<cbc:PayableAmount>)."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

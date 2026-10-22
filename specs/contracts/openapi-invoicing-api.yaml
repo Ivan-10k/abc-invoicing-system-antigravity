@@ -1,0 +1,660 @@
+openapi: 3.0.3
+info:
+  title: ABC Software Corp - API de Facturación Electrónica SUNAT (UBL 2.1) & Migración Legacy
+  version: 1.0.0
+  description: |
+    Contrato formal OpenAPI 3.0 bajo metodología **Spec-Driven Development (SDD)** para **ABC Software Corp**.
+    Cumple con:
+    - **RS N° 097-2012/SUNAT:** Emisión de Facturas (`01`), Boletas (`03`), Notas de Crédito (`07`) y Notas de Débito (`08` con **Catálogo 08**) bajo estándar OASIS `UBL-Invoice-2.1.xsd` y `UBL-DebitNote-2.1.xsd`.
+    - **RS N° 234-2006/SUNAT:** Migración y acoplamiento de fichas informales de almacén legacy (`fecha`, `ingreso`, `salida`, `producto`, `nro_documento`) al Registro de Inventario Permanente Valorizado (Formato 13.1).
+    - **Algoritmo Módulo 11:** Validación preventiva de números de RUC (prefijos `10`, `15`, `17`, `20`).
+  contact:
+    name: Arquitectura de Software - ABC Software Corp
+    email: arquitectura@abc-software-corp.pe
+servers:
+  - url: http://localhost:8000
+    description: Servidor Local Monolito Limpio MVC (Windows .MSI / Android .APK Local Loopback)
+  - url: https://api.abc-software-corp.pe
+    description: API Gateway Producción (Evolución Hexagonal / Microservicios)
+
+tags:
+  - name: FacturacionUBL21
+    description: Emisión de Facturas (01) y Boletas (03) bajo estándar OASIS UBL-Invoice-2.1.xsd
+  - name: NotasDebitoCreditoCat08
+    description: Emisión de Notas de Débito (08 - Catálogo 08 SUNAT) y Notas de Crédito (07)
+  - name: MigracionKardexLegacy
+    description: Ingesta y acoplamiento auditable de fichas informales de almacén (RS 234-2006)
+  - name: ValidacionTributaria
+    description: Validación algorítmica de RUC (Módulo 11) y consulta de catálogos SUNAT
+
+paths:
+  /api/v1/invoices/emit:
+    post:
+      tags:
+        - FacturacionUBL21
+      summary: Emitir Factura (01) o Boleta de Venta Electrónica (03) UBL 2.1
+      description: |
+        Valida RUC de emisor y receptor con **Módulo 11**, calcula con precisión decimal bancaria el **ISC (Cat. 05=2000)**,
+        **IGV 18% (Cat. 05=1000 sobre Base + ISC)** e **ICBPER (Cat. 05=7152)**, construye y firma digitalmente el XML
+        conforme a `UBL-Invoice-2.1.xsd` (XAdES-BES) y lo transmite al OSE / SUNAT retornando el CDR.
+      operationId: emitElectronicInvoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceEmitRequest'
+            examples:
+              FacturaMayoristaConIgvIscIcbper:
+                summary: Factura Mayorista F001-1045 con Arroz (IGV), Licor (ISC+IGV) y Bolsas (ICBPER)
+                value:
+                  ubl_version: "2.1"
+                  customization_id: "2.0"
+                  operation_type_catalog_51: "0101"
+                  document_type_catalog_01: "01"
+                  series: "F001"
+                  correlative: 1045
+                  issue_date: "2026-10-22"
+                  issue_time: "09:50:00"
+                  currency_code_catalog_02: "PEN"
+                  issuer_ruc: "20601234568"
+                  issuer_legal_name: "ABC SOFTWARE CORP S.A.C."
+                  issuer_ubigeo: "150101"
+                  customer_doc_type_catalog_06: "6"
+                  customer_doc_number: "20512345679"
+                  customer_legal_name: "BODEGA CENTRAL MAYORISTA S.A.C."
+                  lines:
+                    - line_number: 1
+                      product_sku: "AB-ARR-50"
+                      sunat_product_code: "50221101"
+                      description: "Saco Arroz Extra 50kg"
+                      unit_code: "BG"
+                      quantity: 10
+                      unit_value: 120.00
+                      catalog_07_igv_type: "10"
+                      igv_rate: 0.18
+                      isc_rate: 0.00
+                      icbper_quantity: 0
+                    - line_number: 2
+                      product_sku: "BE-LIC-12"
+                      sunat_product_code: "50202206"
+                      description: "Caja Licor Ron Cartavio x12"
+                      unit_code: "BX"
+                      quantity: 2
+                      unit_value: 250.00
+                      catalog_07_igv_type: "10"
+                      igv_rate: 0.18
+                      isc_rate: 0.20
+                      icbper_quantity: 0
+                    - line_number: 3
+                      product_sku: "EMP-BOL-G"
+                      description: "Bolsa Plástica Biodegradable Grande"
+                      unit_code: "NIU"
+                      quantity: 4
+                      unit_value: 0.10
+                      catalog_07_igv_type: "10"
+                      igv_rate: 0.18
+                      isc_rate: 0.00
+                      icbper_quantity: 4
+                      icbper_unit_tax: 0.50
+      responses:
+        '201':
+          description: Comprobante UBL 2.1 generado, firmado digitalmente y aceptado por SUNAT/OSE (CDR Código 0).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CdrEmitResponse'
+        '400':
+          description: Error de validación de estructura o reglas de negocio pre-envío (ej. RUC inválido Módulo 11).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxErrorResponse'
+              examples:
+                RucInvalidoError2017:
+                  value:
+                    error_code: "SUNAT-ERR-2017"
+                    sunat_catalog_ref: "Padrón RUC - Módulo 11"
+                    message: "El número de RUC del receptor '20512345670' tiene un dígito verificador inválido (esperado '9')."
+                    status: "RECHAZADO_VALIDACION_PREVIA"
+        '422':
+          description: Rechazo normativo retornado por el OSE / SUNAT o fallo de validación XSD UBL-Invoice-2.1.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxErrorResponse'
+
+  /api/v1/notes/emit:
+    post:
+      tags:
+        - NotasDebitoCreditoCat08
+      summary: Emitir Nota de Débito (Catálogo 08 SUNAT) o Nota de Crédito (Catálogo 09)
+      description: |
+        Emite una Nota de Débito (`08`) exigiendo obligatoriamente un código válido del **Catálogo 08 de SUNAT**
+        (`01` Intereses por mora, `02` Aumento en el valor, `03` Penalidades/otros conceptos, `10` Ajustes de exportación,
+        `11` Ajustes afectos al IVAP) e inyecta los nodos `<cac:DiscrepancyResponse>` y `<cac:BillingReference>`.
+      operationId: emitCreditOrDebitNote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteEmitRequest'
+            examples:
+              NotaDebitoCat08AumentoValor:
+                summary: Nota de Débito FD01-15 por Aumento en el Valor (Catálogo 08 = '02')
+                value:
+                  ubl_version: "2.1"
+                  customization_id: "2.0"
+                  document_type_catalog_01: "08"
+                  series: "FD01"
+                  correlative: 15
+                  issue_date: "2026-10-22"
+                  currency_code_catalog_02: "PEN"
+                  issuer_ruc: "20601234568"
+                  issuer_legal_name: "ABC SOFTWARE CORP S.A.C."
+                  customer_doc_type_catalog_06: "6"
+                  customer_doc_number: "20512345679"
+                  customer_legal_name: "BODEGA CENTRAL MAYORISTA S.A.C."
+                  catalog_08_debit_note_type: "02"
+                  referenced_document_type_catalog_01: "01"
+                  referenced_document_series_number: "F001-1045"
+                  discrepancy_reason: "Ajuste de precio mayorista en Saco Arroz Extra 50kg según adenda comercial"
+                  lines:
+                    - line_number: 1
+                      product_sku: "AB-ARR-50"
+                      description: "Ajuste de valor Saco Arroz Extra 50kg"
+                      unit_code: "BG"
+                      quantity: 10
+                      unit_value: 10.00
+                      catalog_07_igv_type: "10"
+                      igv_rate: 0.18
+      responses:
+        '201':
+          description: Nota de Débito/Crédito UBL 2.1 emitida, firmada y aceptada por el OSE.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CdrEmitResponse'
+        '400':
+          description: Código del Catálogo 08 ausente o inválido, o falta de documento de referencia.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxErrorResponse'
+              examples:
+                Catalogo08InvalidoError2119:
+                  value:
+                    error_code: "SUNAT-ERR-2119"
+                    sunat_catalog_ref: "Catálogo N° 08 - Códigos de Tipo de Nota de Débito"
+                    message: "El código '99' no existe en el Catálogo 08 de SUNAT. Valores permitidos: ['01', '02', '03', '10', '11']."
+                    status: "RECHAZADO_CATALOGO_08"
+
+  /api/v1/legacy/migrate:
+    post:
+      tags:
+        - MigracionKardexLegacy
+      summary: Migrar y acoplar Ficha de Almacén Legacy a Kardex RS 234-2006 y Comprobante UBL 2.1
+      description: |
+        Recibe una o más fichas informales del sistema legacy (`fecha`, `ingreso`, `salida`, `producto`, `nro_documento`),
+        valida que no existan movimientos ambiguos, normaliza serie/correlativo, calcula el hash de no-repudio `audit_sha256`,
+        registra el asiento en el Formato 13.1 (RS N° 234-2006) y retorna el vínculo `migrated_invoice_id`.
+      operationId: migrateLegacyInventoryRecords
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegacyMigrationBatchRequest'
+            examples:
+              MigracionFichaSalidaVenta:
+                value:
+                  default_customer_ruc: "20512345679"
+                  default_customer_name: "CLIENTE HISTORICO MAYORISTA S.A.C."
+                  auto_generate_ubl_invoice: true
+                  records:
+                    - fecha: "2026-10-15"
+                      ingreso: 0.00
+                      salida: 25.00
+                      producto: "Azúcar Rubia Saco 50k"
+                      nro_documento: "F001-000890"
+      responses:
+        '200':
+          description: Lote de fichas legacy migrado con trazabilidad completa (`migrated_invoice_id` y `audit_sha256`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegacyMigrationBatchResponse'
+        '422':
+          description: Ficha legacy inconsistente puesta en cuarentena (ej. ingreso y salida simultáneos > 0).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxErrorResponse'
+              examples:
+                FichaAmbiguaError:
+                  value:
+                    error_code: "LEGACY_KARDEX_AMBIGUOUS_MOVEMENT"
+                    sunat_catalog_ref: "RS N° 234-2006/SUNAT - Formato 13.1"
+                    message: "La ficha con nro_documento 'F001-000890' registra ingreso=10.00 y salida=5.00 simultáneamente."
+                    status: "CUARENTENA_AUDITORIA"
+
+  /api/v1/ruc/{numero}/validate:
+    get:
+      tags:
+        - ValidacionTributaria
+      summary: Validar RUC peruano con Algoritmo Módulo 11
+      description: |
+        Verifica que el parámetro `numero` tenga 11 dígitos numéricos, inicie con un prefijo oficial de SUNAT
+        (`10`, `15`, `17`, `20`) y cumpla con el dígito verificador calculado mediante pesos `[5, 4, 3, 2, 7, 6, 5, 4, 3, 2]`.
+      operationId: validateRucModulo11
+      parameters:
+        - name: numero
+          in: path
+          required: true
+          description: Número de RUC peruano a evaluar (11 dígitos).
+          schema:
+            type: string
+            example: "20601234568"
+      responses:
+        '200':
+          description: Resultado detallado de la evaluación algorítmica Módulo 11.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RucValidationResponse'
+              examples:
+                RucJuridicoValido:
+                  value:
+                    ruc: "20601234568"
+                    is_valid: true
+                    taxpayer_type: "PERSONA_JURIDICA (Prefijo 20)"
+                    expected_check_digit: 8
+                    provided_check_digit: 8
+                    message: "RUC válido conforme al algoritmo Módulo 11 de SUNAT."
+
+components:
+  schemas:
+    InvoiceLineInput:
+      title: InvoiceLineItemDTO
+      type: object
+      required:
+        - line_number
+        - product_sku
+        - description
+        - unit_code
+        - quantity
+        - unit_value
+        - catalog_07_igv_type
+        - igv_amount
+        - line_extension_amount
+        - line_total_with_taxes
+      properties:
+        line_number:
+          type: integer
+          description: "Número secuencial de la línea (XPath: cac:InvoiceLine/cbc:ID)"
+        product_sku:
+          type: string
+          description: "Código interno del producto SKU (XPath: cac:InvoiceLine/cac:Item/cac:SellersItemIdentification/cbc:ID)"
+        description:
+          type: string
+          description: "Descripción detallada del ítem (XPath: cac:InvoiceLine/cac:Item/cbc:Description)"
+        unit_code:
+          type: string
+          default: "NIU"
+          description: "Unidad de medida según Catálogo 03 SUNAT, ej. NIU, KGM (XPath: cac:InvoiceLine/cbc:InvoicedQuantity/@unitCode)"
+        quantity:
+          type: number
+          description: "Cantidad facturada (XPath: cac:InvoiceLine/cbc:InvoicedQuantity)"
+        unit_value:
+          type: number
+          description: "Valor unitario sin impuestos (XPath: cac:InvoiceLine/cac:Price/cbc:PriceAmount)"
+        catalog_07_igv_type:
+          type: string
+          description: "Código del Catálogo 07 de SUNAT, ej. '10' (Gravado), '20' (Exonerado), '30' (Inafecto)"
+        igv_rate:
+          type: number
+          default: 0.18
+          description: "Tasa del IGV, ej. 0.18"
+        igv_amount:
+          type: number
+          description: "Monto total del IGV de la línea (XPath: cac:InvoiceLine/cac:TaxTotal/cac:TaxAmount)"
+        isc_rate:
+          type: number
+          default: 0.00
+          description: "Tasa del ISC si aplica"
+        isc_amount:
+          type: number
+          default: 0.00
+          description: "Monto total del ISC"
+        icbper_quantity:
+          type: number
+          default: 0
+          description: "Cantidad de bolsas plásticas si aplica"
+        icbper_unit_tax:
+          type: number
+          default: 0.50
+          description: "Impuesto unitario por bolsa plástica"
+        icbper_amount:
+          type: number
+          default: 0.00
+          description: "Monto total del ICBPER"
+        line_extension_amount:
+          type: number
+          description: "Valor de venta de la línea (Cantidad * Valor unitario)"
+        line_total_with_taxes:
+          type: number
+          description: "Precio de venta total de la línea con impuestos incluidos"
+
+    InvoiceEmitRequest:
+      type: object
+      required:
+        - document_type_catalog_01
+        - series
+        - correlative
+        - issue_date
+        - currency_code_catalog_02
+        - issuer_ruc
+        - issuer_legal_name
+        - customer_doc_type_catalog_06
+        - customer_doc_number
+        - customer_legal_name
+        - lines
+      properties:
+        ubl_version:
+          type: string
+          default: "2.1"
+        customization_id:
+          type: string
+          default: "2.0"
+        operation_type_catalog_51:
+          type: string
+          default: "0101"
+        document_type_catalog_01:
+          type: string
+          enum: ["01", "03"]
+          description: "Catálogo 01: 01=Factura, 03=Boleta."
+        series:
+          type: string
+          pattern: '^[FB][A-Z0-9]{3}$'
+        correlative:
+          type: integer
+          minimum: 1
+        issue_date:
+          type: string
+          format: date
+        issue_time:
+          type: string
+          default: "12:00:00"
+        currency_code_catalog_02:
+          type: string
+          enum: ["PEN", "USD", "EUR"]
+        issuer_ruc:
+          type: string
+          pattern: '^(10|15|17|20)[0-9]{9}$'
+        issuer_legal_name:
+          type: string
+        issuer_ubigeo:
+          type: string
+          default: "150101"
+        customer_doc_type_catalog_06:
+          type: string
+          enum: ["6", "1", "4", "7", "0"]
+        customer_doc_number:
+          type: string
+        customer_legal_name:
+          type: string
+        source_legacy_record_id:
+          type: string
+          nullable: true
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/InvoiceLineInput'
+
+    NoteEmitRequest:
+      type: object
+      required:
+        - document_type_catalog_01
+        - series
+        - correlative
+        - issue_date
+        - currency_code_catalog_02
+        - issuer_ruc
+        - issuer_legal_name
+        - customer_doc_type_catalog_06
+        - customer_doc_number
+        - customer_legal_name
+        - referenced_document_series_number
+        - discrepancy_reason
+        - lines
+      properties:
+        ubl_version:
+          type: string
+          default: "2.1"
+        customization_id:
+          type: string
+          default: "2.0"
+        document_type_catalog_01:
+          type: string
+          enum: ["07", "08"]
+          description: "Catálogo 01: 07=Nota de Crédito, 08=Nota de Débito."
+        series:
+          type: string
+          pattern: '^[FB][A-Z0-9]{3}$'
+        correlative:
+          type: integer
+          minimum: 1
+        issue_date:
+          type: string
+          format: date
+        currency_code_catalog_02:
+          type: string
+          enum: ["PEN", "USD", "EUR"]
+        issuer_ruc:
+          type: string
+        issuer_legal_name:
+          type: string
+        customer_doc_type_catalog_06:
+          type: string
+          enum: ["6", "1", "4", "7", "0"]
+        customer_doc_number:
+          type: string
+        customer_legal_name:
+          type: string
+        catalog_08_debit_note_type:
+          type: string
+          nullable: true
+          enum: ["01", "02", "03", "10", "11"]
+          description: "Catálogo 08 SUNAT (Obligatorio para Nota de Débito '08'): 01=Intereses por mora, 02=Aumento en el valor, 03=Penalidades, 10=Ajustes Exportación, 11=Ajustes IVAP."
+        referenced_document_type_catalog_01:
+          type: string
+          enum: ["01", "03"]
+          default: "01"
+        referenced_document_series_number:
+          type: string
+          pattern: '^[FB][A-Z0-9]{3}-[0-9]{1,8}$'
+        discrepancy_reason:
+          type: string
+          minLength: 5
+          maxLength: 250
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/InvoiceLineInput'
+
+    CdrEmitResponse:
+      type: object
+      required:
+        - invoice_id
+        - document_type_catalog_01
+        - document_id
+        - status
+        - sunat_response_code
+        - sunat_description
+        - xml_digest_value
+        - tax_summary
+      properties:
+        invoice_id:
+          type: string
+          format: uuid
+        document_type_catalog_01:
+          type: string
+        document_id:
+          type: string
+          example: "F001-1045"
+        status:
+          type: string
+          enum: ["ACEPTADO", "ACEPTADO_CON_OBSERVACIONES", "RECHAZADO", "EN_PROCESO_OSE"]
+        sunat_response_code:
+          type: string
+          example: "0"
+          description: "Código CDR SUNAT ('0' = Aceptado, '2000-2999' = Rechazo, '4000+' = Observación)."
+        sunat_description:
+          type: string
+          example: "La Factura numero F001-1045, ha sido aceptada"
+        sunat_observations:
+          type: array
+          items:
+            type: string
+        xml_filename:
+          type: string
+          example: "20601234568-01-F001-1045.xml"
+        cdr_filename:
+          type: string
+          example: "R-20601234568-01-F001-1045.xml"
+        xml_digest_value:
+          type: string
+          description: "Resumen criptográfico SHA-256 (<ds:DigestValue>) de la firma digital XMLDSig."
+          example: "x8K9mP2vQ7nL4jR1wT6yU3zA5bC8dE0fG2hI4jK6lM8="
+        tax_summary:
+          type: object
+          properties:
+            currency_code:
+              type: string
+              example: "PEN"
+            total_gravadas:
+              type: number
+              example: 1700.40
+            total_exoneradas:
+              type: number
+              example: 0.00
+            total_inafectas:
+              type: number
+              example: 0.00
+            total_isc:
+              type: number
+              example: 100.00
+            total_igv:
+              type: number
+              example: 324.07
+            total_icbper:
+              type: number
+              example: 2.00
+            payable_amount:
+              type: number
+              example: 2126.47
+
+    LegacyMigrationBatchRequest:
+      type: object
+      required:
+        - records
+      properties:
+        default_customer_ruc:
+          type: string
+          default: "20512345679"
+        default_customer_name:
+          type: string
+          default: "CLIENTE HISTORICO MAYORISTA S.A.C."
+        auto_generate_ubl_invoice:
+          type: boolean
+          default: true
+        records:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: ["fecha", "ingreso", "salida", "producto", "nro_documento"]
+            properties:
+              fecha:
+                type: string
+                format: date
+              ingreso:
+                type: number
+                minimum: 0
+              salida:
+                type: number
+                minimum: 0
+              producto:
+                type: string
+              nro_documento:
+                type: string
+
+    LegacyMigrationBatchResponse:
+      type: object
+      properties:
+        processed_count:
+          type: integer
+        migrated_records:
+          type: array
+          items:
+            type: object
+            properties:
+              legacy_record_id:
+                type: string
+                format: uuid
+              original_nro_documento:
+                type: string
+              normalized_series:
+                type: string
+              normalized_correlative:
+                type: integer
+              sunat_table12_operation_type:
+                type: string
+              migrated_invoice_id:
+                type: string
+              audit_sha256:
+                type: string
+
+    RucValidationResponse:
+      type: object
+      required:
+        - ruc
+        - is_valid
+        - message
+      properties:
+        ruc:
+          type: string
+        is_valid:
+          type: boolean
+        taxpayer_type:
+          type: string
+          nullable: true
+        expected_check_digit:
+          type: integer
+          nullable: true
+        provided_check_digit:
+          type: integer
+          nullable: true
+        message:
+          type: string
+
+    TaxErrorResponse:
+      type: object
+      required:
+        - error_code
+        - sunat_catalog_ref
+        - message
+        - status
+      properties:
+        error_code:
+          type: string
+          description: "Código de error normativo SUNAT (ej. SUNAT-ERR-2017, SUNAT-ERR-2119) o de dominio."
+        sunat_catalog_ref:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
